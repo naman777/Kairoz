@@ -1,43 +1,38 @@
 {
   "name": "kairoz-backend",
   "version": "1.0.0",
-  "description": "The backend service for the Kairoz deployment agent.",
+  "description": "AI-powered agentic system for automated deployment and monitoring",
   "main": "dist/index.js",
   "scripts": {
-    "start": "node dist/index.js",
     "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
     "build": "tsc",
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "prisma:generate": "npx prisma generate",
-    "prisma:push": "npx prisma db push"
+    "start": "node dist/index.js",
+    "db:generate": "prisma generate",
+    "db:push": "prisma db push",
+    "db:migrate": "prisma migrate dev",
+    "db:studio": "prisma studio"
   },
-  "keywords": [
-    "devops",
-    "ai",
-    "deployment"
-  ],
-  "author": "",
-  "license": "ISC",
   "dependencies": {
-    "@langchain/community": "^0.3.49",
-    "@langchain/core": "^0.3.66",
-    "@langchain/openai": "^0.6.2",
-    "@pinecone-database/pinecone": "^6.1.1",
-    "@prisma/client": "^5.15.0",
-    "bullmq": "^5.8.2",
+    "@langchain/openai": "^0.0.14",
+    "@pinecone-database/pinecone": "^2.0.1",
+    "@prisma/client": "^5.7.1",
+    "bullmq": "^4.15.3",
     "cors": "^2.8.5",
-    "dotenv": "^16.6.1",
-    "express": "^4.21.2",
-    "openai": "^5.10.1",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "ioredis": "^5.3.2",
+    "langchain": "^0.1.7",
+    "openai": "^4.24.7",
     "redis": "^5.6.0",
-    "winston": "^3.17.0",
-    "zod": "^3.23.8"
+    "simple-git": "^3.20.0",
+    "zod": "^3.22.4"
   },
   "devDependencies": {
-    "@types/express": "^4.17.23",
-    "@types/node": "^20.14.2",
-    "prisma": "^5.15.0",
+    "@types/cors": "^2.8.19",
+    "@types/express": "^4.17.21",
+    "@types/node": "^20.10.5",
+    "prisma": "^5.7.1",
     "ts-node-dev": "^2.0.0",
-    "typescript": "^5.4.5"
+    "typescript": "^5.3.3"
   }
 }
