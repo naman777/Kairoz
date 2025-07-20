@@ -1,0 +1,94 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+
+// High-level record of a user's request
+model Deployment {
+  id        String   @id @default(cuid())
+  repoUrl   String?
+  domain    String?
+  status    Status   @default(PENDING) // Overall status of the entire request
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // A deployment consists of multiple agent tasks
+  tasks AgentTask[]
+
+  @@map("deployments")
+}
+
+// Tracks each individual step performed by an agent
+model AgentTask {
+  id           String   @id @default(cuid())
+  deploymentId String
+  deployment   Deployment @relation(fields: [deploymentId], references: [id])
+
+  agentName    String   // e.g., "DeploymentAgent", "MonitoringAgent"
+  taskName     String   // e.g., "generate_dockerfile", "run_build", "diagnose_error"
+  status       Status   @default(PENDING)
+  attempts     Int      @default(0)
+
+  input        Json?    // The parameters given to the agent for this task
+  output       Json?    // The result or output from the task
+  
+  startedAt    DateTime?
+  completedAt  DateTime?
+
+  // Each task can have multiple log entries
+  logs         Log[]
+
+  @@map("agent_tasks")
+}
+
+// Stores logs from shell commands or agent thoughts
+model Log {
+  id          String   @id @default(cuid())
+  agentTaskId String
+  agentTask   AgentTask @relation(fields: [agentTaskId], references: [id])
+
+  type        LogLevel @default(INFO)
+  message     String   @db.Text
+  timestamp   DateTime @default(now())
+
+  @@map("logs")
+}
+
+// Stores the final diagnosis from the RAG agent
+model Diagnosis {
+  id           String   @id @default(cuid())
+  deploymentId String   @unique // A deployment can have one final diagnosis
+  
+  errorLog     String   @db.Text // The specific error that triggered the diagnosis
+  rootCause    String   @db.Text // The LLM-generated root cause analysis
+  suggestion   String   @db.Text // The LLM-generated suggestion for a fix
+  
+  // The Pinecone vector IDs of the context used to generate this diagnosis
+  retrievedContextIds String[] 
+
+  createdAt    DateTime @default(now())
+
+  @@map("diagnoses")
+}
+
+
+enum Status {
+  PENDING
+  IN_PROGRESS
+  SUCCESS
+  FAILED
+  REQUIRES_MANUAL_ACTION
+}
+
+enum LogLevel {
+  INFO     // Standard output
+  ERROR    // Error output (stderr)
+  DEBUG    // Agent's internal thoughts or verbose logs
+  SYSTEM   // System-level messages
+}
