@@ -1,12 +1,11 @@
 // src/agents/agent-factory.ts
-
 import { Logger } from "winston";
 import { BaseAgent } from "./base-agent";
 import { OrchestratorAgent } from "./orchestrator-agent";
 import { DeploymentAgent } from "./deployment-agent";
 import { MonitoringAgent } from "./monitoring-agent";
 import { DiagnosisAgent } from "./diagnosis-agent";
-import { PrismaClient } from "@/generated/prisma";
+import { PrismaClient } from "../generated/prisma";
 
 export type AgentType =
   | "Orchestrator"

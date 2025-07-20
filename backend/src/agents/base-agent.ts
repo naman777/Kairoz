@@ -1,5 +1,5 @@
 // src/agents/base-agent.ts
-import { PrismaClient } from '@/generated/prisma';
+import { PrismaClient } from '../generated/prisma';
 import { Logger } from 'winston';
 import { z } from 'zod';
 

@@ -3,7 +3,7 @@ import { Logger } from "winston";
 import { Queue, Worker, Job } from "bullmq";
 import { AgentFactory, AgentType } from "./agent-factory";
 import { z } from "zod";
-import { PrismaClient } from "@/generated/prisma";
+import { PrismaClient } from "../generated/prisma";
 
 const TaskInputSchema = z.object({
   agentType: z.enum(["Orchestrator", "Deployment", "Monitoring", "Diagnosis"]),
@@ -84,19 +84,30 @@ export class AgentCoordinator {
       });
     });
 
-    this.worker.on("failed", (job: Job, err: Error) => {
+    this.worker.on("failed", (job: Job | undefined, err: Error) => {
       this.stats.failedTasks++;
       this.stats.tasksInProgress--;
 
-      this.logger.error(`Task ${job.id} failed`, {
-        error: err.message,
-        stack: err.stack,
-        jobData: job.data,
-      });
+      if (job) {
+        this.logger.error(`Task ${job.id} failed`, {
+          error: err.message,
+          stack: err.stack,
+          jobData: job.data,
+        });
+      } else {
+        this.logger.error("A task failed, but job is undefined", {
+          error: err.message,
+          stack: err.stack,
+        });
+      }
     });
 
-    this.worker.on("progress", (job: Job, progress: number) => {
-      this.logger.debug(`Task ${job.id} progress: ${progress}%`);
+    this.worker.on("progress", (job: Job, progress: number | object) => {
+      if (typeof progress === "number") {
+        this.logger.debug(`Task ${job.id} progress: ${progress}%`);
+      } else {
+        this.logger.debug(`Task ${job.id} progress:`, progress);
+      }
     });
 
     this.worker.on("error", (err: Error) => {
@@ -243,7 +254,7 @@ export class AgentCoordinator {
         taskId,
         agentType,
         status: "failed",
-        error: error.message,
+        error: error instanceof Error ? error.message : "Unknown error",
         duration,
       };
     }

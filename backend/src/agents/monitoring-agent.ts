@@ -1,5 +1,3 @@
-
-
 // src/agents/monitoring-agent.ts
 import { BaseAgent } from './base-agent';
 import { ChatOpenAI } from '@langchain/openai';
@@ -66,20 +64,38 @@ export class MonitoringAgent extends BaseAgent {
       } else {
         // Try HTTP health check
         try {
-          const response = await fetch('http://localhost:80/health', {
-            method: 'GET',
-            timeout: 5000,
-          });
-          
-          healthCheck = {
-            ...healthCheck,
-            status: response.ok ? 'healthy' : 'unhealthy',
-            responseTime: Date.now() - startTime,
-            httpStatus: response.status,
-          };
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 5000);
+          try {
+            const response = await fetch('http://localhost:80/health', {
+              method: 'GET',
+              signal: controller.signal,
+            });
+            clearTimeout(timeoutId);
+            healthCheck = {
+              ...healthCheck,
+              status: response.ok ? 'healthy' : 'unhealthy',
+              responseTime: Date.now() - startTime,
+              httpStatus: response.status,
+            };
 
-          if (!response.ok) {
-            healthCheck.error = `HTTP ${response.status}: ${response.statusText}`;
+            if (!response.ok) {
+              healthCheck.error = `HTTP ${response.status}: ${response.statusText}`;
+            }
+          } catch (fetchError) {
+            if (fetchError instanceof Error && fetchError.name === 'AbortError') {
+              healthCheck = {
+                ...healthCheck,
+                status: 'unhealthy',
+                error: 'Request timed out',
+              };
+            } else {
+              healthCheck = {
+                ...healthCheck,
+                status: 'unhealthy',
+                error: "Failed to fetch health endpoint",
+              };
+            }
           }
         } catch (fetchError) {
           // If no health endpoint, just check if container is responding
@@ -94,7 +110,7 @@ export class MonitoringAgent extends BaseAgent {
       healthCheck = {
         ...healthCheck,
         status: 'unhealthy',
-        error: error.message,
+        error: error instanceof Error ? error.message : String(error),
       };
     }
 
@@ -127,7 +143,7 @@ export class MonitoringAgent extends BaseAgent {
       const { stdout } = await execAsync(`docker logs --tail ${lines} ${containerName}`);
       return stdout;
     } catch (error) {
-      return `Failed to get logs: ${error.message}`;
+      return `Failed to get logs: ${error instanceof Error ? error.message : String(error)}`;
     }
   }
 
@@ -158,7 +174,11 @@ export class MonitoringAgent extends BaseAgent {
 
       this.logger.info(`Triggered diagnosis for deployment ${deploymentId}: ${error}`);
     } catch (diagnosisError) {
-      this.logger.error(`Failed to trigger diagnosis: ${diagnosisError.message}`);
+      if (diagnosisError instanceof Error) {
+        this.logger.error(`Failed to trigger diagnosis: ${diagnosisError.message}`);
+      } else {
+        this.logger.error(`Failed to trigger diagnosis: ${String(diagnosisError)}`);
+      }
     }
   }
 
@@ -209,8 +229,9 @@ export class MonitoringAgent extends BaseAgent {
 
       return result;
     } catch (error) {
-      await this.logMessage(taskId, `Monitoring setup failed: ${error.message}`, 'ERROR');
-      await this.updateTaskStatus(taskId, 'FAILED', { error: error.message });
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      await this.logMessage(taskId, `Monitoring setup failed: ${errorMessage}`, 'ERROR');
+      await this.updateTaskStatus(taskId, 'FAILED', { error: error });
       throw error;
     }
   }

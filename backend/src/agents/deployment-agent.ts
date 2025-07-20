@@ -1,7 +1,8 @@
 // src/agents/deployment-agent.ts
 import { BaseAgent } from './base-agent';
 import { ChatOpenAI } from '@langchain/openai';
-import { PromptTemplate } from '@langchain/core/prompts';
+import { PromptTemplate } from 'langchain/prompts';
+import { HumanMessage } from 'langchain/schema';
 import simpleGit from 'simple-git';
 import * as fs from 'fs-extra';
 import * as path from 'path';
@@ -63,7 +64,14 @@ export class DeploymentAgent extends BaseAgent {
    * Analyze repository structure and contents
    */
   private async analyzeRepository(repoPath: string): Promise<any> {
-    const analysis = {
+    const analysis: {
+      packageJson: any;
+      dockerfile: string | null;
+      language: string;
+      framework: string;
+      files: string[];
+      hasTests: boolean;
+    } = {
       packageJson: null,
       dockerfile: null,
       language: 'unknown',
@@ -92,8 +100,8 @@ export class DeploymentAgent extends BaseAgent {
     // Detect framework
     if (analysis.packageJson) {
       const dependencies = {
-        ...analysis.packageJson.dependencies,
-        ...analysis.packageJson.devDependencies,
+        ...(analysis.packageJson.dependencies || {}),
+        ...(analysis.packageJson.devDependencies || {}),
       };
 
       if (dependencies.express) analysis.framework = 'express';
@@ -173,13 +181,15 @@ export class DeploymentAgent extends BaseAgent {
       hasTests: analysis.hasTests.toString(),
     });
 
-    const response = await this.llm.call([{ role: 'user', content: prompt }]);
+    const response = await this.llm.call([new HumanMessage(prompt)]);
     
     try {
-      const parsed = JSON.parse(response.content);
+      const responseContent = typeof response.content === 'string' ? response.content : JSON.stringify(response.content);
+      const parsed = JSON.parse(responseContent);
       return DockerfileSchema.parse(parsed);
     } catch (error) {
-      throw new Error(`Failed to parse Dockerfile generation response: ${error.message}`);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      throw new Error(`Failed to parse Dockerfile generation response: ${errorMessage}`);
     }
   }
 
@@ -226,13 +236,15 @@ export class DeploymentAgent extends BaseAgent {
       dockerfile,
     });
 
-    const response = await this.llm.call([{ role: 'user', content: prompt }]);
+    const response = await this.llm.call([new HumanMessage(prompt)]);
     
     try {
-      const parsed = JSON.parse(response.content);
+      const responseContent = typeof response.content === 'string' ? response.content : JSON.stringify(response.content);
+      const parsed = JSON.parse(responseContent);
       return ErrorAnalysisSchema.parse(parsed);
     } catch (parseError) {
-      throw new Error(`Failed to parse error analysis: ${parseError.message}`);
+      const errorMessage = parseError instanceof Error ? parseError.message : 'Unknown error';
+      throw new Error(`Failed to parse error analysis: ${errorMessage}`);
     }
   }
 
@@ -258,8 +270,9 @@ export class DeploymentAgent extends BaseAgent {
       currentDockerfile,
     });
 
-    const response = await this.llm.call([{ role: 'user', content: prompt }]);
-    await fs.writeFile(dockerfilePath, response.content);
+    const response = await this.llm.call([new HumanMessage(prompt)]);
+    const responseContent = typeof response.content === 'string' ? response.content : JSON.stringify(response.content);
+    await fs.writeFile(dockerfilePath, responseContent);
   }
 
   /**
@@ -299,7 +312,7 @@ export class DeploymentAgent extends BaseAgent {
       }
 
       // Step 4: Build with self-correction loop
-      let imageName: string;
+      let imageName: string | undefined;
       let buildSuccess = false;
 
       while (attempt <= this.maxRetries && !buildSuccess) {
@@ -309,19 +322,20 @@ export class DeploymentAgent extends BaseAgent {
           buildSuccess = true;
           await this.logMessage(taskId, `Build successful: ${imageName}`);
         } catch (buildError) {
-          await this.logMessage(taskId, `Build failed on attempt ${attempt}: ${buildError.message}`, 'ERROR');
+          const errorMessage = buildError instanceof Error ? buildError.message : 'Unknown build error';
+          await this.logMessage(taskId, `Build failed on attempt ${attempt}: ${errorMessage}`, 'ERROR');
           
           if (attempt === this.maxRetries) {
-            throw new Error(`Build failed after ${this.maxRetries} attempts: ${buildError.message}`);
+            throw new Error(`Build failed after ${this.maxRetries} attempts: ${errorMessage}`);
           }
 
           // Analyze error and apply fix
           await this.logMessage(taskId, 'Analyzing build error with AI...');
-          const errorAnalysis = await this.analyzeBuildError(buildError.message, dockerfile);
+          const errorAnalysis = await this.analyzeBuildError(errorMessage, dockerfile);
           
           if (errorAnalysis.requiresManualIntervention) {
             await this.updateTaskStatus(taskId, 'REQUIRES_MANUAL_ACTION', {
-              error: buildError.message,
+              error: errorMessage,
               analysis: errorAnalysis,
               repoPath,
             });
@@ -344,6 +358,10 @@ export class DeploymentAgent extends BaseAgent {
         }
       }
 
+      if (!imageName) {
+        throw new Error('Failed to build Docker image');
+      }
+
       // Step 5: Deploy container (simplified - in production would involve orchestration)
       const containerName = `kairoz-${deploymentId}`;
       const runCommand = `docker run -d --name ${containerName} -p 80:3000 ${imageName}`;
@@ -352,8 +370,9 @@ export class DeploymentAgent extends BaseAgent {
         await execAsync(runCommand);
         await this.logMessage(taskId, `Container deployed: ${containerName}`);
       } catch (runError) {
-        await this.logMessage(taskId, `Container deployment failed: ${runError.message}`, 'ERROR');
-        throw runError;
+        const errorMessage = runError instanceof Error ? runError.message : 'Unknown deployment error';
+        await this.logMessage(taskId, `Container deployment failed: ${errorMessage}`, 'ERROR');
+        throw new Error(errorMessage);
       }
 
       const result = {
@@ -370,8 +389,9 @@ export class DeploymentAgent extends BaseAgent {
 
       return result;
     } catch (error) {
-      await this.logMessage(taskId, `Deployment failed: ${error.message}`, 'ERROR');
-      await this.updateTaskStatus(taskId, 'FAILED', { error: error.message });
+      const errorMessage = error instanceof Error ? error.message : 'Unknown deployment error';
+      await this.logMessage(taskId, `Deployment failed: ${errorMessage}`, 'ERROR');
+      await this.updateTaskStatus(taskId, 'FAILED', { error: errorMessage });
       throw error;
     }
   }

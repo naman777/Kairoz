@@ -2,7 +2,8 @@ import { BaseAgent } from './base-agent';
 import { ChatOpenAI } from '@langchain/openai';
 import { Pinecone } from '@pinecone-database/pinecone';
 import { OpenAIEmbeddings } from '@langchain/openai';
-import { PromptTemplate } from '@langchain/core/prompts';
+import { PromptTemplate } from 'langchain/prompts';
+import { HumanMessage } from 'langchain/schema';
 import { z } from 'zod';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -82,7 +83,8 @@ export class DiagnosisAgent extends BaseAgent {
 
       return incidents;
     } catch (error) {
-      this.logger.warn(`Failed to retrieve similar incidents: ${error.message}`);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      this.logger.warn(`Failed to retrieve similar incidents: ${errorMessage}`);
       return [];
     }
   }
@@ -118,7 +120,8 @@ export class DiagnosisAgent extends BaseAgent {
 
       this.logger.info(`Stored incident ${incidentId} in vector database`);
     } catch (error) {
-      this.logger.error(`Failed to store incident in vector database: ${error.message}`);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      this.logger.error(`Failed to store incident in vector database: ${errorMessage}`);
     }
   }
 
@@ -182,13 +185,15 @@ export class DiagnosisAgent extends BaseAgent {
       contextString,
     });
 
-    const response = await this.llm.call([{ role: 'user', content: prompt }]);
+    const response = await this.llm.call([new HumanMessage(prompt)]);
     
     try {
-      const parsed = JSON.parse(response.content);
+      const responseContent = typeof response.content === 'string' ? response.content : JSON.stringify(response.content);
+      const parsed = JSON.parse(responseContent);
       return DiagnosisSchema.parse(parsed);
     } catch (error) {
-      throw new Error(`Failed to parse diagnosis response: ${error.message}`);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      throw new Error(`Failed to parse diagnosis response: ${errorMessage}`);
     }
   }
 
@@ -228,8 +233,9 @@ export class DiagnosisAgent extends BaseAgent {
       containerName: containerName || 'unknown',
     });
 
-    const response = await this.llm.call([{ role: 'user', content: prompt }]);
-    return response.content;
+    const response = await this.llm.call([new HumanMessage(prompt)]);
+    const responseContent = typeof response.content === 'string' ? response.content : JSON.stringify(response.content);
+    return responseContent;
   }
 
   /**
@@ -299,8 +305,9 @@ export class DiagnosisAgent extends BaseAgent {
 
       return result;
     } catch (error) {
-      await this.logMessage(taskId, `Diagnosis failed: ${error.message}`, 'ERROR');
-      await this.updateTaskStatus(taskId, 'FAILED', { error: error.message });
+      const errorMessage = error instanceof Error ? error.message : 'Unknown diagnosis error';
+      await this.logMessage(taskId, `Diagnosis failed: ${errorMessage}`, 'ERROR');
+      await this.updateTaskStatus(taskId, 'FAILED', { error: errorMessage });
       throw error;
     }
   }

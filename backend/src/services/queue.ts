@@ -2,9 +2,10 @@ import { Queue, Worker, Job } from "bullmq";
 import Redis from "ioredis";
 import { AgentCoordinator } from "../agents/agent-coordinator";
 import { DeploymentCommand } from "../types";
-import { redisClient } from "@/config/redis";
-import { PrismaClient } from "@/generated/prisma";
-import { prisma } from "@/config/prisma";
+import { redisClient } from "../config/redis";
+import { PrismaClient } from "../generated/prisma";
+import { prisma } from "../config/prisma";
+import { loggers } from "winston";
 
 class QueueService {
   private static instance: QueueService;
@@ -47,8 +48,10 @@ class QueueService {
       async (job: Job<DeploymentCommand>) => {
         console.log(`Processing job ${job.id}: ${job.data.action}`);
 
-        const coordinator = new AgentCoordinator(this.prisma, this.redis, job.data);
-        const result = await coordinator.execute(job.data);
+        console.log(`Job data:`, job.data);
+
+        const coordinator = new AgentCoordinator(this.prisma, loggers.get('default'), this.redis);
+        const result = await coordinator.start();
 
         return result;
       },

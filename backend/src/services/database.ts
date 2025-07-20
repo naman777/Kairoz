@@ -1,14 +1,12 @@
-import { LogLevel, PrismaClient, Status } from '@/generated/prisma';
-import { env } from '../config/env';
+import { LogLevel, PrismaClient, Status } from "../generated/prisma";
+import { prisma } from "../config/prisma";
 
 class DatabaseService {
   private static instance: DatabaseService;
   public prisma: PrismaClient;
 
   private constructor() {
-    this.prisma = new PrismaClient({
-      log: env.NODE_ENV === 'development' ? ['query', 'info', 'warn', 'error'] : ['error'],
-    });
+    this.prisma = prisma;
   }
 
   public static getInstance(): DatabaseService {
@@ -21,9 +19,9 @@ class DatabaseService {
   async connect() {
     try {
       await this.prisma.$connect();
-      console.log('✅ Database connected successfully');
+      console.log("✅ Database connected successfully");
     } catch (error) {
-      console.error('❌ Database connection failed:', error);
+      console.error("❌ Database connection failed:", error);
       throw error;
     }
   }
@@ -38,40 +36,48 @@ class DatabaseService {
       data: {
         repoUrl,
         domain,
-        status: 'PENDING'
-      }
+        status: "PENDING",
+      },
     });
   }
 
   async updateDeploymentStatus(id: string, status: Status) {
     return this.prisma.deployment.update({
       where: { id },
-      data: { status, updatedAt: new Date() }
+      data: { status, updatedAt: new Date() },
     });
   }
 
-  async createAgentTask(deploymentId: string, agentName: string, taskName: string, input?: any) {
+  async createAgentTask(
+    deploymentId: string,
+    agentName: string,
+    taskName: string,
+    input?: any
+  ) {
     return this.prisma.agentTask.create({
       data: {
         deploymentId,
         agentName,
         taskName,
         input,
-        status: 'PENDING'
-      }
+        status: "PENDING",
+      },
     });
   }
 
-  async updateAgentTask(id: string, data: Partial<{
-    status: Status;
-    output: any;
-    startedAt: Date;
-    completedAt: Date;
-    attempts: number;
-  }>) {
+  async updateAgentTask(
+    id: string,
+    data: Partial<{
+      status: Status;
+      output: any;
+      startedAt: Date;
+      completedAt: Date;
+      attempts: number;
+    }>
+  ) {
     return this.prisma.agentTask.update({
       where: { id },
-      data
+      data,
     });
   }
 
@@ -80,20 +86,26 @@ class DatabaseService {
       data: {
         agentTaskId,
         type,
-        message
-      }
+        message,
+      },
     });
   }
 
-  async createDiagnosis(deploymentId: string, errorLog: string, rootCause: string, suggestion: string, retrievedContextIds: string[]) {
+  async createDiagnosis(
+    deploymentId: string,
+    errorLog: string,
+    rootCause: string,
+    suggestion: string,
+    retrievedContextIds: string[]
+  ) {
     return this.prisma.diagnosis.create({
       data: {
         deploymentId,
         errorLog,
         rootCause,
         suggestion,
-        retrievedContextIds
-      }
+        retrievedContextIds,
+      },
     });
   }
 }

@@ -1,7 +1,8 @@
 // src/agents/orchestrator-agent.ts
 import { BaseAgent } from './base-agent';
 import { ChatOpenAI } from '@langchain/openai';
-import { PromptTemplate } from '@langchain/core/prompts';
+import { PromptTemplate } from 'langchain/prompts';
+import { HumanMessage } from 'langchain/schema';
 import { z } from 'zod';
 import { StructuredOutputParser } from 'langchain/output_parsers';
 
@@ -28,8 +29,8 @@ const DeploymentPlanSchema = z.object({
 
 export class OrchestratorAgent extends BaseAgent {
   private llm: ChatOpenAI;
-  private commandParser: StructuredOutputParser<z.infer<typeof CommandParseSchema>>;
-  private planParser: StructuredOutputParser<z.infer<typeof DeploymentPlanSchema>>;
+  private commandParser: StructuredOutputParser<typeof CommandParseSchema>;
+  private planParser: StructuredOutputParser<typeof DeploymentPlanSchema>;
 
   constructor(prisma: any, logger: any) {
     super(prisma, logger, 'Orchestrator');
@@ -67,8 +68,9 @@ export class OrchestratorAgent extends BaseAgent {
       format_instructions: this.commandParser.getFormatInstructions(),
     });
 
-    const response = await this.llm.call([{ role: 'user', content: prompt }]);
-    return await this.commandParser.parse(response.content);
+    const response = await this.llm.call([new HumanMessage(prompt)]);
+    const responseContent = typeof response.content === 'string' ? response.content : JSON.stringify(response.content);
+    return await this.commandParser.parse(responseContent) as z.infer<typeof CommandParseSchema>;
   }
 
   /**
@@ -100,8 +102,9 @@ export class OrchestratorAgent extends BaseAgent {
       format_instructions: this.planParser.getFormatInstructions(),
     });
 
-    const response = await this.llm.call([{ role: 'user', content: prompt }]);
-    return await this.planParser.parse(response.content);
+    const response = await this.llm.call([new HumanMessage(prompt)]);
+    const responseContent = typeof response.content === 'string' ? response.content : JSON.stringify(response.content);
+    return await this.planParser.parse(responseContent) as z.infer<typeof DeploymentPlanSchema>;
   }
 
   /**
@@ -177,8 +180,9 @@ export class OrchestratorAgent extends BaseAgent {
 
       return result;
     } catch (error) {
-      await this.logMessage(taskId, `Orchestration failed: ${error.message}`, 'ERROR');
-      await this.updateTaskStatus(taskId, 'FAILED', { error: error.message });
+      const errorMessage = error instanceof Error ? error.message : 'Unknown orchestration error';
+      await this.logMessage(taskId, `Orchestration failed: ${errorMessage}`, 'ERROR');
+      await this.updateTaskStatus(taskId, 'FAILED', { error: errorMessage });
       throw error;
     }
   }
