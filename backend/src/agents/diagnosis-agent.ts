@@ -37,7 +37,7 @@ export class DiagnosisAgent extends BaseAgent {
     super(prisma, logger, 'Diagnosis');
     
     this.llm = new ChatOpenAI({
-      modelName: 'gpt-4',
+      modelName: 'gpt-4.1-nano',
       temperature: 0.1,
     });
 

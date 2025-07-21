@@ -11,6 +11,9 @@ const redisClient = new Redis({
   port: REDIS_PORT,
   password: REDIS_PASSWORD,
   username: "default",
+  maxRetriesPerRequest: null, // Required for BullMQ
+  lazyConnect: true,
+  enableReadyCheck: false,
 });
 
 redisClient.on("error", (err: any) => console.log("Redis Client Error", err));

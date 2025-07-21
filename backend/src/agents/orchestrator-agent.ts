@@ -36,7 +36,7 @@ export class OrchestratorAgent extends BaseAgent {
     super(prisma, logger, 'Orchestrator');
     
     this.llm = new ChatOpenAI({
-      modelName: 'gpt-4',
+      modelName: 'gpt-4.1-nano',
       temperature: 0.1,
     });
 
@@ -85,9 +85,9 @@ export class OrchestratorAgent extends BaseAgent {
       Domain: {domain}
       
       Available Agents:
-      - DeploymentAgent: Handles git cloning, dockerfile generation, docker builds, container deployment
-      - MonitoringAgent: Sets up monitoring, log collection, health checks
-      - DiagnosisAgent: Analyzes errors, provides root cause analysis and fixes
+      - Deployment: Handles git cloning, dockerfile generation, docker builds, container deployment
+      - Monitoring: Sets up monitoring, log collection, health checks
+      - Diagnosis: Analyzes errors, provides root cause analysis and fixes
 
       Create a step-by-step plan that coordinates these agents effectively.
       Each step should specify which agent to use and what task to perform.
@@ -105,6 +105,32 @@ export class OrchestratorAgent extends BaseAgent {
     const response = await this.llm.call([new HumanMessage(prompt)]);
     const responseContent = typeof response.content === 'string' ? response.content : JSON.stringify(response.content);
     return await this.planParser.parse(responseContent) as z.infer<typeof DeploymentPlanSchema>;
+  }
+
+  /**
+   * Map LLM-generated agent names to standardized enum values
+   */
+  private mapAgentName(agentName: string): string {
+    const normalizedName = agentName.toLowerCase().replace(/agent$/i, '');
+    
+    switch (normalizedName) {
+      case 'deployment':
+      case 'deploy':
+        return 'Deployment';
+      case 'monitoring':
+      case 'monitor':
+        return 'Monitoring';
+      case 'diagnosis':
+      case 'diagnose':
+      case 'diagnostic':
+        return 'Diagnosis';
+      case 'orchestrator':
+      case 'orchestrate':
+        return 'Orchestrator';
+      default:
+        // Default to Deployment if unknown
+        return 'Deployment';
+    }
   }
 
   /**
@@ -145,10 +171,12 @@ export class OrchestratorAgent extends BaseAgent {
       // Step 4: Create agent tasks for each step in the plan
       const createdTasks = [];
       for (const step of plan.steps) {
+        const standardizedAgentName = this.mapAgentName(step.agentName);
+        
         const agentTask = await this.prisma.agentTask.create({
           data: {
             deploymentId,
-            agentName: step.agentName,
+            agentName: standardizedAgentName,
             taskName: step.taskName,
             status: 'PENDING',
             input: {
@@ -161,7 +189,7 @@ export class OrchestratorAgent extends BaseAgent {
           },
         });
         createdTasks.push(agentTask);
-        await this.logMessage(taskId, `Created task: ${agentTask.id} for ${step.agentName}`);
+        await this.logMessage(taskId, `Created task: ${agentTask.id} for ${standardizedAgentName} (originally ${step.agentName})`);
       }
 
       const result = {

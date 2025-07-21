@@ -35,7 +35,7 @@ export class DeploymentAgent extends BaseAgent {
     super(prisma, logger, 'Deployment');
     
     this.llm = new ChatOpenAI({
-      modelName: 'gpt-4',
+      modelName: 'gpt-4.1-nano',
       temperature: 0.1,
     });
 

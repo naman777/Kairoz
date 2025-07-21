@@ -3,7 +3,7 @@ import { prisma } from "../config/prisma";
 
 class DatabaseService {
   private static instance: DatabaseService;
-  public prisma: PrismaClient;
+  public prisma: PrismaClient = prisma;
 
   private constructor() {
     this.prisma = prisma;
@@ -32,13 +32,17 @@ class DatabaseService {
 
   // Helper methods for common operations
   async createDeployment(repoUrl?: string, domain?: string) {
-    return this.prisma.deployment.create({
+
+    const deployment = await this.prisma.deployment.create({
       data: {
-        repoUrl,
-        domain,
-        status: "PENDING",
+        repoUrl: repoUrl || '',
+        domain: domain || '',
+        status: 'PENDING',
       },
     });
+
+
+    return deployment;
   }
 
   async updateDeploymentStatus(id: string, status: Status) {

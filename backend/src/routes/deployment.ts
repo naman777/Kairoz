@@ -2,6 +2,8 @@ import { Router } from "express";
 import { queue } from "../services/queue";
 import { db } from "../services/database";
 import { z } from "zod";
+import { AgentCoordinator } from "../agents/agent-coordinator";
+import { loggers } from "winston";
 
 const router = Router();
 
@@ -12,81 +14,52 @@ const deployCommandSchema = z.object({
   deploymentId: z.string().optional(),
 });
 
-// Deploy endpoint
-router.post("/", async (req, res) => {
+type DeployCommand = z.infer<typeof deployCommandSchema>;
+
+// POST /api/deploy - Deploy an application
+router.post("/deploy", async (req, res) => {
   try {
     const command = deployCommandSchema.parse(req.body);
 
-    // Create deployment record if it's a new deployment
-    let deploymentId = command.deploymentId;
-    if (command.action === "deploy" && !deploymentId) {
-      const deployment = await db.createDeployment(
-        command.repoUrl,
-        command.domain
-      );
-      deploymentId = deployment.id;
-    }
+    // Create deployment record first
+    const deployment = await db.prisma.deployment.create({
+      data: {
+        repoUrl: command.repoUrl,
+        domain: command.domain,
+        status: 'PENDING',
+      },
+    });
 
-    // Add job to queue
+    // Create a deployment job with the deployment ID
     const job = await queue.addDeploymentJob({
       ...command,
-      deploymentId,
+      deploymentId: deployment.id,
     });
 
     res.json({
       success: true,
       jobId: job.id,
-      deploymentId,
-      message: `${command.action} job queued successfully`,
+      deploymentId: deployment.id,
+      message: "Deployment job created successfully",
     });
   } catch (error) {
-    res.status(400).json({
-      success: false,
-      error: error instanceof Error ? error.message : "Invalid request",
-    });
-  }
-});
-
-// Get deployment status
-router.get("/:id/status", async (req, res) => {
-  try {
-    const { id } = req.params;
-
-    const deployment = await db.prisma.deployment.findUnique({
-      where: { id },
-      include: {
-        tasks: {
-          orderBy: { startedAt: "desc" },
-          include: { logs: true },
-        },
-        diagnoses: {
-          orderBy: { createdAt: "desc" },
-          take: 1,
-        },
-      },
-    });
-
-    if (!deployment) {
-      return res.status(404).json({
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({
         success: false,
-        error: "Deployment not found",
+        error: "Invalid input data",
+        details: error.errors,
       });
     }
 
-    res.json({
-      success: true,
-      deployment,
-    });
-  } catch (error) {
     res.status(500).json({
       success: false,
-      error: "Failed to fetch deployment status",
+      error: error instanceof Error ? error.message : "Unknown error occurred",
     });
   }
 });
 
-// Get job status
-router.get("/jobs/:jobId/status", async (req, res) => {
+// GET /api/deploy/status/:jobId - Get deployment status
+router.get("/status/:jobId", async (req, res) => {
   try {
     const { jobId } = req.params;
     const status = await queue.getJobStatus(jobId);
@@ -110,4 +83,106 @@ router.get("/jobs/:jobId/status", async (req, res) => {
   }
 });
 
-export { router as deploymentRoutes };
+// GET /api/deploy/deployments - Get all deployments
+router.get("/deployments", async (req, res) => {
+  try {
+    const deployments = await db.prisma.deployment.findMany({
+      orderBy: { createdAt: "desc" },
+      take: 50, // Limit to 50 most recent
+    });
+
+    res.json({
+      success: true,
+      deployments,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: "Failed to fetch deployments",
+    });
+  }
+});
+
+// DELETE /api/deploy/:deploymentId - Stop a deployment
+router.delete("/:deploymentId", async (req, res) => {
+  try {
+    const { deploymentId } = req.params;
+
+    const deployment = await db.prisma.deployment.findUnique({
+      where: { id: deploymentId },
+    });
+
+    if (!deployment) {
+      return res.status(404).json({
+        success: false,
+        error: "Deployment not found",
+      });
+    }
+
+    // Create a stop job
+    const job = await queue.addDeploymentJob({
+      action: "stop",
+      deploymentId,
+    });
+
+    res.json({
+      success: true,
+      jobId: job.id,
+      message: "Stop deployment job created successfully",
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : "Failed to stop deployment",
+    });
+  }
+});
+
+// POST /api/deploy/process-pending - Manually trigger processing of pending tasks
+router.post("/process-pending", async (req, res) => {
+  try {
+    // Create agent coordinator instance with proper parameters
+    const logger = loggers.get('default') || console as any;
+    const coordinator = new AgentCoordinator(db.prisma, logger, null);
+    await coordinator.processPendingTasks();
+    
+    res.json({
+      success: true,
+      message: "Processed pending tasks successfully",
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : "Failed to process pending tasks",
+    });
+  }
+});
+
+// GET /api/deploy/tasks - Get all agent tasks with their status
+router.get("/tasks", async (req, res) => {
+  try {
+    const tasks = await db.prisma.agentTask.findMany({
+      orderBy: { createdAt: "desc" },
+      take: 100,
+      include: {
+        deployment: true,
+        logs: {
+          orderBy: { timestamp: "desc" },
+          take: 5,
+        },
+      },
+    });
+
+    res.json({
+      success: true,
+      tasks,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : "Failed to fetch tasks",
+    });
+  }
+});
+
+export default router;

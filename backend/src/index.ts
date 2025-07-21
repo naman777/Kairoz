@@ -4,7 +4,8 @@ import { env } from "./config/env";
 import { db } from "./services/database";
 import { queue } from "./services/queue";
 import { errorHandler } from "./middleware/error-handler";
-import { deploymentRoutes } from "./routes/deployment";
+import deploymentRoutes from "./routes/deployment";
+import logger from "./config/logger";
 
 const app = express();
 
@@ -36,18 +37,18 @@ async function startServer() {
 
     // Start the server
     app.listen(env.PORT, () => {
-      console.log(`🚀 Kairoz backend running on port ${env.PORT}`);
-      console.log(`📊 Environment: ${env.NODE_ENV}`);
+      logger.info(`🚀 Kairoz backend running on port ${env.PORT}`);
+      logger.info(`📊 Environment: ${env.NODE_ENV}`);
     });
   } catch (error) {
-    console.error("Failed to start server:", error);
+    logger.error("Failed to start server:", error);
     process.exit(1);
   }
 }
 
 // Graceful shutdown
 process.on("SIGTERM", async () => {
-  console.log("SIGTERM received, shutting down gracefully");
+  logger.info("SIGTERM received, shutting down gracefully");
   await queue.close();
   await db.disconnect();
   process.exit(0);

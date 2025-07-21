@@ -6,12 +6,12 @@ import { z } from "zod";
 import { PrismaClient } from "../generated/prisma";
 
 const TaskInputSchema = z.object({
-  agentType: z.enum(["Orchestrator", "Deployment", "Monitoring", "Diagnosis"]),
+  agentType: z.enum(["OrchestratorAgent", "DeploymentAgent", "MonitoringAgent", "DiagnosisAgent"]),
   taskId: z.string(),
   input: z.any(),
   priority: z.number().optional().default(50),
   delay: z.number().optional().default(0),
-  attempts: z.number().optional().default(3),
+  attempts: z.number().optional().default(1), // Reduced from 3 to 1 to prevent multiple runs
 });
 
 interface TaskResult {
@@ -82,6 +82,18 @@ export class AgentCoordinator {
         agentType: result.agentType,
         duration: result.duration,
       });
+
+      // If orchestrator completed, automatically process any new pending tasks
+      if (result.agentType === 'OrchestratorAgent') {
+        setTimeout(async () => {
+          try {
+            await this.processPendingTasksFromDB();
+            this.logger.info('Processed pending tasks after orchestrator completion');
+          } catch (error) {
+            this.logger.error('Failed to process pending tasks after orchestrator completion:', error);
+          }
+        }, 500); // Small delay to ensure database writes are complete
+      }
     });
 
     this.worker.on("failed", (job: Job | undefined, err: Error) => {
@@ -129,7 +141,7 @@ export class AgentCoordinator {
       this.logger.info("Agent coordinator started successfully");
 
       // Process any pending tasks from previous runs
-      await this.processPendingTasks();
+      await this.processPendingTasksFromDB();
     } catch (error) {
       this.logger.error("Failed to start agent coordinator:", error);
       this.isRunning = false;
@@ -200,6 +212,13 @@ export class AgentCoordinator {
   }
 
   /**
+   * Process any pending tasks from the database
+   */
+  async processPendingTasks(): Promise<void> {
+    await this.processPendingTasksFromDB();
+  }
+
+  /**
    * Process a single task
    */
   private async processTask(job: Job): Promise<TaskResult> {
@@ -261,9 +280,27 @@ export class AgentCoordinator {
   }
 
   /**
+   * Map database agent name to AgentType
+   */
+  private mapAgentNameToType(agentName: string): AgentType {
+    switch (agentName) {
+      case 'Orchestrator':
+        return 'OrchestratorAgent';
+      case 'Deployment':
+        return 'DeploymentAgent';
+      case 'Monitoring':
+        return 'MonitoringAgent';
+      case 'Diagnosis':
+        return 'DiagnosisAgent';
+      default:
+        throw new Error(`Unknown agent name: ${agentName}`);
+    }
+  }
+
+  /**
    * Process pending tasks from database
    */
-  private async processPendingTasks(): Promise<void> {
+  private async processPendingTasksFromDB(): Promise<void> {
     try {
       const pendingTasks = await this.prisma.agentTask.findMany({
         where: {
@@ -276,12 +313,28 @@ export class AgentCoordinator {
       });
 
       for (const task of pendingTasks) {
-        await this.queueTask(
-          task.agentName as AgentType,
-          task.id,
-          task.input || {},
-          { priority: 75 } // Higher priority for recovery tasks
-        );
+        try {
+          const agentType = this.mapAgentNameToType(task.agentName);
+          
+          // Check if task is still pending before queuing
+          const currentTask = await this.prisma.agentTask.findUnique({
+            where: { id: task.id }
+          });
+          
+          if (currentTask?.status === 'PENDING') {
+            await this.queueTask(
+              agentType,
+              task.id,
+              task.input || {},
+              { priority: 75 } // Higher priority for recovery tasks
+            );
+            this.logger.info(`Queued pending task ${task.id} for ${task.agentName}`);
+          } else {
+            this.logger.debug(`Skipping task ${task.id} - status is ${currentTask?.status}`);
+          }
+        } catch (error) {
+          this.logger.error(`Failed to queue task ${task.id}:`, error);
+        }
       }
 
       if (pendingTasks.length > 0) {

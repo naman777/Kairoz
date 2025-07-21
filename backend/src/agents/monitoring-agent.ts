@@ -23,7 +23,7 @@ export class MonitoringAgent extends BaseAgent {
     super(prisma, logger, 'Monitoring');
     
     this.llm = new ChatOpenAI({
-      modelName: 'gpt-4',
+      modelName: 'gpt-4.1-nano',
       temperature: 0.1,
     });
   }

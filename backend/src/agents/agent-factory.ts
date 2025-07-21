@@ -8,10 +8,10 @@ import { DiagnosisAgent } from "./diagnosis-agent";
 import { PrismaClient } from "../generated/prisma";
 
 export type AgentType =
-  | "Orchestrator"
-  | "Deployment"
-  | "Monitoring"
-  | "Diagnosis";
+  | "OrchestratorAgent"
+  | "DeploymentAgent"
+  | "MonitoringAgent"
+  | "DiagnosisAgent";
 
 export class AgentFactory {
   private prisma: PrismaClient;
@@ -29,18 +29,18 @@ export class AgentFactory {
    */
   private initializeAgents(): void {
     this.agents.set(
-      "Orchestrator",
+      "OrchestratorAgent",
       new OrchestratorAgent(this.prisma, this.logger)
     );
     this.agents.set(
-      "Deployment",
+      "DeploymentAgent",
       new DeploymentAgent(this.prisma, this.logger)
     );
     this.agents.set(
-      "Monitoring",
+      "MonitoringAgent",
       new MonitoringAgent(this.prisma, this.logger)
     );
-    this.agents.set("Diagnosis", new DiagnosisAgent(this.prisma, this.logger));
+    this.agents.set("DiagnosisAgent", new DiagnosisAgent(this.prisma, this.logger));
   }
 
   /**
